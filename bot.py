@@ -1,12 +1,10 @@
 import os
 import asyncio
 import subprocess
-import tempfile
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
-ADMIN_ID = int(os.environ.get("ADMIN_ID", "0"))
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -27,57 +25,58 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def search_username(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    username = update.message.text.strip()
+    username = update.message.text.strip().lstrip("@")
 
     if len(username) < 1 or len(username) > 50:
         await update.message.reply_text("❌ Никнейм должен быть от 1 до 50 символов.")
         return
 
-    if not username.replace("_", "").replace("-", "").replace(".", "").isalnum():
-        await update.message.reply_text("❌ Никнейм содержит недопустимые символы.")
-        return
-
-    msg = await update.message.reply_text(f"🔍 Ищу `{username}`... Это может занять до 1 минуты.", parse_mode="Markdown")
+    msg = await update.message.reply_text(
+        f"🔍 Ищу `{username}`... Это может занять до 1 минуты.",
+        parse_mode="Markdown"
+    )
 
     try:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            result = await asyncio.wait_for(
-                asyncio.get_event_loop().run_in_executor(
-                    None,
-                    lambda: subprocess.run(
-                        ["python3", "-m", "sherlock", username, "--timeout", "10", "--print-found"],
-                        capture_output=True,
-                        text=True,
-                        cwd=tmpdir
-                    )
-                ),
-                timeout=120
-            )
+        loop = asyncio.get_event_loop()
+        result = await asyncio.wait_for(
+            loop.run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    ["sherlock", username, "--print-found", "--timeout", "10", "--no-color"],
+                    capture_output=True,
+                    text=True
+                )
+            ),
+            timeout=120
+        )
 
         output = result.stdout.strip()
-        lines = [l for l in output.split("\n") if l.strip() and "[+]" in l]
+        lines = [l.strip() for l in output.split("\n") if "[+]" in l]
 
         if not lines:
-            await msg.edit_text(f"😔 Аккаунты с именем `{username}` не найдены.", parse_mode="Markdown")
+            await msg.edit_text(
+                f"😔 Аккаунты с именем `{username}` не найдены.",
+                parse_mode="Markdown"
+            )
             return
 
-        found_text = f"✅ *Найдено аккаунтов: {len(lines)}* для `{username}`\n\n"
+        found_text = f"✅ *Найдено: {len(lines)} аккаунт(ов)* для `{username}`\n\n"
         chunk = found_text
         for line in lines:
             url = line.replace("[+]", "").strip()
             entry = f"• {url}\n"
             if len(chunk) + len(entry) > 4000:
-                await update.message.reply_text(chunk, parse_mode="Markdown")
+                await update.message.reply_text(chunk, parse_mode="Markdown", disable_web_page_preview=True)
                 chunk = ""
             chunk += entry
 
         if chunk:
-            await msg.edit_text(chunk, parse_mode="Markdown")
+            await msg.edit_text(chunk, parse_mode="Markdown", disable_web_page_preview=True)
 
     except asyncio.TimeoutError:
         await msg.edit_text("⏱ Превышено время ожидания. Попробуй снова.")
     except Exception as e:
-        await msg.edit_text(f"❌ Ошибка при поиске: {str(e)}")
+        await msg.edit_text(f"❌ Ошибка: {str(e)}")
 
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
