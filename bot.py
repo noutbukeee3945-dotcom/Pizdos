@@ -1,8 +1,11 @@
 import os
+import sys
 import asyncio
-import subprocess
+from io import StringIO
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 
@@ -25,10 +28,11 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def search_username(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    import subprocess
     username = update.message.text.strip().lstrip("@")
 
-    if len(username) < 1 or len(username) > 50:
-        await update.message.reply_text("❌ Никнейм должен быть от 1 до 50 символов.")
+    if not username or len(username) > 50:
+        await update.message.reply_text("❌ Некорректный никнейм.")
         return
 
     msg = await update.message.reply_text(
@@ -42,9 +46,11 @@ async def search_username(update: Update, context: ContextTypes.DEFAULT_TYPE):
             loop.run_in_executor(
                 None,
                 lambda: subprocess.run(
-                    ["sherlock", username, "--print-found", "--timeout", "10", "--no-color"],
+                    [sys.executable, "-m", "sherlock_project", username,
+                     "--print-found", "--timeout", "10", "--no-color"],
                     capture_output=True,
-                    text=True
+                    text=True,
+                    cwd=os.path.dirname(os.path.abspath(__file__))
                 )
             ),
             timeout=120
